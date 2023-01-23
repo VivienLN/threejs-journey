@@ -4,6 +4,9 @@ export default {
     root: "src/",
     publicDir: "../static/",
     base: "./",
+    watch: {
+      usePolling: true
+    },
     server:
     {
         host: true,
@@ -17,4 +20,5 @@ export default {
         emptyOutDir: true,
         sourcemap: true
     }
+    
 }
