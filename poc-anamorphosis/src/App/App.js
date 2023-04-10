@@ -181,6 +181,8 @@ export default class App
             sizeAttenuation: true,
         })
         particlesMaterial.depthWrite = false
+
+        // Add to scene
         this.scene.add(new THREE.Points(this.particlesGeometry, particlesMaterial))
     }
 
@@ -191,7 +193,7 @@ export default class App
         this.sizes.height = window.innerHeight
 
         // Update camera
-        this.camera.aspect = sizes.width / sizes.height
+        this.camera.aspect = this.sizes.width / this.sizes.height
         this.camera.updateProjectionMatrix()
 
         // Update renderer
