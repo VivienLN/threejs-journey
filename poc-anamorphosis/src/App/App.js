@@ -7,14 +7,14 @@ import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 export default class App 
 {
     settings = {
-        background: 0xffeeaa,
+        background: 0x000000,
         viewpoint: new THREE.Vector3(0, 0, 2),
         fov: 50,
-        enableOrbit: false,
+        enableOrbit: !false,
         enableAxesHelper: false,
         images: [],
         particles: {
-            color: 0x000000,
+            color: 0xffeeaa,
             size: .06 / 10000, // Will be multiplied by screen width
             minZ: -1.5,
             maxZ: 1.5,
@@ -33,6 +33,7 @@ export default class App
     images = []
     raycaster
     particlesGeometry
+    gui
     
     constructor(canvas, settings)
     {
@@ -48,11 +49,11 @@ export default class App
         }
 
         // Debug
-        const gui = new dat.GUI()
+        this.setupGui()
 
         // Scene
         this.scene = new THREE.Scene()
-        this.scene.background = new THREE.Color(0xffeeaa);
+        this.scene.background = new THREE.Color(this.settings.background);
 
         // Renderer
         this.renderer = new THREE.WebGLRenderer({
@@ -69,6 +70,7 @@ export default class App
         // Orbit Controls
         this.orbitControls = new OrbitControls(this.camera, canvas)
         this.orbitControls.enableDamping = true
+        this.orbitControls.enabled = this.settings.enableOrbit
 
         // Axes
         this.axesHelper = new THREE.AxesHelper(2)
@@ -130,6 +132,10 @@ export default class App
                 let index = (image.width * y + x) * 3
                 // r,g,b,a so 4 items for one pixel
                 let dataComposantIndex = (image.width * y + x) * 4
+                // only take one pixel every 2
+                if(x%2 == y%2) {
+                    continue
+                }
 
                 // Position depends on camera
                 // Improvement: no need for condition
@@ -151,7 +157,7 @@ export default class App
                 let g = imgData.data[dataComposantIndex + 1] / 255
                 let b = imgData.data[dataComposantIndex + 2] / 255
                 let a = imgData.data[dataComposantIndex + 3]  / 255
-                let value = 1 - (r + g + b) / 3 * a
+                let value = (r + g + b) / 3 * a
 
                 // Project point on plane
                 let z = this.settings.particles.minZ + value * (this.settings.particles.maxZ - this.settings.particles.minZ)
@@ -205,8 +211,10 @@ export default class App
     {
         let x = event.offsetX / this.sizes.width * 2 - 1
         let y = event.offsetY / this.sizes.height * 2 - 1
-        this.camera.position.x = x * .04
-        this.camera.position.y = -y * .04
+        if(!this.settings.enableOrbit) {
+            this.camera.position.x = x * .04
+            this.camera.position.y = -y * .04
+        }
     }
 
     refresh()
@@ -226,5 +234,10 @@ export default class App
 
         // Call tick again on the next frame
         window.requestAnimationFrame(this.refresh.bind(this))
+    }
+
+    setupGui()
+    {
+        this.gui = new dat.GUI()
     }
 }
