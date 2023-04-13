@@ -1,26 +1,31 @@
 uniform mat4 projectionMatrix;
 uniform mat4 viewMatrix;
 uniform mat4 modelMatrix;
+uniform vec2 uFrequency;
+uniform vec2 uPhase;
+uniform float uTime;
 
 attribute vec3 position;
 attribute float aRandom;
 
 varying float vRandom;
 
-#define M_PI 3.1415926535897932384626433832795
-
 void main()
 {
-    float waves = 4.0;
-    float maxZ = .05;
+    float maxZ = .03;
 
     // All in one line
     // gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);
     // Separated 
     vec4 modelPosition = modelMatrix * vec4(position, 1.0);
-    modelPosition.z += sin(modelPosition.x * M_PI * waves) * maxZ;
-    modelPosition.z += aRandom * .06;
+    // Wave effect
+    modelPosition.z += sin(modelPosition.x * uFrequency.x + uTime * -4.0) * maxZ;
+    modelPosition.z += sin(modelPosition.y * uFrequency.y + uTime * 2.0) * maxZ;
+    // Random effect
+    // modelPosition.z += aRandom * .06;
+
     vec4 viewPosition = viewMatrix * modelPosition;
+
     vec4 projectedPosition = projectionMatrix * viewPosition;
 
     gl_Position = projectedPosition;
