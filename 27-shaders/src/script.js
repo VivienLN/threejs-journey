@@ -21,6 +21,7 @@ const scene = new THREE.Scene()
  * Textures
  */
 const textureLoader = new THREE.TextureLoader()
+const flagTexture = textureLoader.load('/textures/flag.png')
 
 /**
  * Test mesh
@@ -46,6 +47,7 @@ const material = new THREE.RawShaderMaterial({
         )},
         uTime: {value: 0},
         uColor: {value: new THREE.Color('#33eeff')},
+        uTexture: {value: flagTexture}
     }
 })
 

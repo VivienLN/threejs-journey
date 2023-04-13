@@ -6,9 +6,11 @@ uniform vec2 uPhase;
 uniform float uTime;
 
 attribute vec3 position;
+attribute vec2 uv;
 attribute float aRandom;
 
 varying float vRandom;
+varying vec2 vUv;
 
 void main()
 {
@@ -31,4 +33,5 @@ void main()
     gl_Position = projectedPosition;
 
     vRandom = aRandom;
+    vUv = uv;
 }
