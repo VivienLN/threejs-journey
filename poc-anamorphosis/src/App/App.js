@@ -18,9 +18,12 @@ export default class App
         images: [],
         particles: {
             color: 0xffeeaa,
-            planeWidth: 1.5,
+            planeSize: 1.5,
             // For now, all images are assumed to be the same size
-            planeHeight: 1.5 * 140 / 200,
+            // planeHeight: 1.5 * 140 / 200,
+            // planeHeight: 1.5,
+            // Max size in px for images
+            imageSize: 200,
             size: 10,
             minZ: -1.5,
             maxZ: 1.5,
@@ -142,49 +145,63 @@ export default class App
     imageToGeomAttributes(image)
     {
         const imgData = this.getImageData(image)
-        const positions = new Float32Array(image.width * image.height * 3)
-        const visible = new Uint8Array(image.width * image.height) // Sad, no BitArray in JS :'(
+        const imgSize = this.settings.particles.imageSize
+        // Divide by two because we only show half the pixels, to get a "framed" print effect
+        const count = imgSize * imgSize
+        const positions = new Float32Array(count * 3)
+        const visible = new Uint8Array(count) // Sad, no BitArray in JS :'(
         const minZ = this.settings.particles.minZ
         const maxZ = this.settings.particles.maxZ
-        const xRatio = this.settings.particles.planeWidth / image.width
-        const yRatio = this.settings.particles.planeHeight / image.height
+        const ratio = this.settings.particles.planeSize / imgSize
 
         // Move particles along z axis
-        for(let y = 0; y < image.height; y++) {
-            for(let x = 0; x < image.width; x++) {
-                let i = image.width * y + x
-                let posIndex = i * 3       // x, y, z in positions
-                let colorIndex = i * 4  // r, g, b, a in imgData
-
-                // Get input image pixel value (luminosity)
-                let r = imgData.data[colorIndex] / 255
-                let g = imgData.data[colorIndex + 1] / 255
-                let b = imgData.data[colorIndex + 2] / 255
-                let a = imgData.data[colorIndex + 3]  / 255
-                let value = (r + g + b) / 3 * a
-
-                // Cast ray from particle position on the plane (z=0) to viewpoint
-                let projectedX = x * xRatio - this.settings.particles.planeWidth / 2
-                let projectedY = -y * yRatio + this.settings.particles.planeHeight / 2
-                let projectedPosition = new THREE.Vector3(projectedX, projectedY, 0)
-
-                // Stolen from raycaster.setFromCamera()
-                let rayDirection = this.settings.viewpoint.clone().sub(projectedPosition).normalize()
-                let ray = new THREE.Ray(projectedPosition, rayDirection)
+        // TODO: improve: right now half of positions items are particles that will never be shown
+        for(var y = 0; y < imgSize; y++) {
+            for(var x = 0; x < imgSize; x++) {
+                if(x%2 !== y%2) continue
+                let i = imgSize * y + x
+                let posIndex = i * 3        // x, y, z in positions
+                let colorIndex = i * 4      // r, g, b, a in imgData
                 let finalPosition = new THREE.Vector3()
 
-                // Get point position along the ray
-                ray.at(minZ + value * (maxZ - minZ), finalPosition)
+                // Discard 1px / 2 (for "frame print" effect, like a checkboard)
+                // And discard "out of bound" pixels (for images with w or h smaller than imgSize)
+                let isVisible = colorIndex < imgData.data.length
+                visible[i] = isVisible
+    
+                // Cast ray from particle position on the plane (z=0) to viewpoint
+                let projectedX = x * ratio - this.settings.particles.planeSize / 2
+                let projectedY = -y * ratio + this.settings.particles.planeSize / 2
+                let projectedPosition = new THREE.Vector3(projectedX, projectedY, 0)
+
+                if(isVisible) {
+                    // Get input image pixel value (luminosity)
+                    let r = imgData.data[colorIndex] / 255
+                    let g = imgData.data[colorIndex + 1] / 255
+                    let b = imgData.data[colorIndex + 2] / 255
+                    let a = imgData.data[colorIndex + 3]  / 255
+                    let value = (r + g + b) / 3 * a
+    
+                    // Stolen from raycaster.setFromCamera()
+                    let rayDirection = this.settings.viewpoint.clone().sub(projectedPosition).normalize()
+                    let ray = new THREE.Ray(projectedPosition, rayDirection)
+    
+                    // Get point position along the ray
+                    ray.at(minZ + value * (maxZ - minZ), finalPosition)
+
+                } else {
+                    // Just use position on the z=0 plane because they will be hidden anyway
+                    // (but can be transitionned later for other images)
+                    // And we dont care about image pixel color because z will be 0
+                    finalPosition.x = projectedX
+                    finalPosition.y = projectedY
+                    finalPosition.z = 0
+                }
                 
                 // Fill the positions array
                 positions[posIndex    ] = finalPosition.x
                 positions[posIndex + 1] = finalPosition.y
                 positions[posIndex + 2] = finalPosition.z
-
-                // Get the discarded attribute, after the position
-                // Because we just want to hide discarded particles in fragment shader
-                // Discard 1px / 2 (for "frame print" effect, like a checkboard)
-                visible[i] = x%2 === y%2
             }
         }
 
