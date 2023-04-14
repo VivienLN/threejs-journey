@@ -4,6 +4,9 @@ import * as dat from 'lil-gui'
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js'
 import { TextGeometry } from 'three/examples/jsm/geometries/TextGeometry.js'
 
+import pictureVertexShader from '../shaders/picture-particles/vertex.glsl'
+import pictureFragmentShader from '../shaders/picture-particles/fragment.glsl'
+
 export default class App 
 {
     settings = {
@@ -15,11 +18,13 @@ export default class App
         images: [],
         particles: {
             color: 0xffeeaa,
-            size: .06 / 10000, // Will be multiplied by screen width
+            planeWidth: 1.5,
+            // For now, all images are assumed to be the same size
+            planeHeight: 1.5 * 140 / 200,
+            size: 10,
             minZ: -1.5,
             maxZ: 1.5,
-        },
-        imageRatio: .6,
+        }
     }
 
     scene
@@ -32,8 +37,10 @@ export default class App
     loadingManager
     images = []
     raycaster
-    particlesGeometry
+    particles
     gui
+
+    picturePlane
     
     constructor(canvas, settings)
     {
@@ -77,7 +84,21 @@ export default class App
         this.scene.add(this.axesHelper)
 
         // Particles
-        this.particlesGeometry = new THREE.BufferGeometry()
+        const particlesGeometry = new THREE.BufferGeometry()
+        const particlesMaterial = new THREE.RawShaderMaterial({
+            depthWrite: false,
+            vertexColors: true,
+            transparent: true,
+            vertexShader: pictureVertexShader,
+            fragmentShader: pictureFragmentShader,
+            uniforms: {
+                uSize: { value: this.settings.particles.size },
+                uColor: { value: new THREE.Color(this.settings.particles.color) }
+            }
+        })
+        this.particles = new THREE.Points(particlesGeometry, particlesMaterial)
+        this.scene.add(this.particles)
+        
         this.raycaster = new THREE.Raycaster()
 
         // Load images 
@@ -99,97 +120,78 @@ export default class App
         this.refresh()
     }
 
-    onLoadHandler() {
-        // TODO: delete (for debugging)
+    onLoadHandler() 
+    {
         const image = this.images[0]
 
+        // In the end, do this once for all images on site loading
+        const attributes = this.imageToGeomAttributes(image)
+        
+        // There should always be the same number of particles 
+        // (maybe bigger image size ? With transparent pixels for the others?)
+        // this.particles.geometry.setDrawRange(0, image.width * image.height);
+        
+        this.particles.geometry.setAttribute('position', attributes.positions)
+        this.particles.geometry.setAttribute('aVisible', attributes.visible)
+        this.particles.geometry.computeBoundingBox();
+        this.particles.geometry.computeBoundingSphere();
+        this.particles.geometry.attributes.aVisible.needsUpdate = true
+        this.particles.geometry.attributes.position.needsUpdate = true
+    }
+
+    imageToGeomAttributes(image)
+    {
+        const imgData = this.getImageData(image)
         const positions = new Float32Array(image.width * image.height * 3)
-        const tempCanvas = document.createElement('canvas')
-        const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true})
-        const screenRatio = this.sizes.width / this.sizes.height
-        const currentPoint = new THREE.Vector3()
+        const visible = new Uint8Array(image.width * image.height) // Sad, no BitArray in JS :'(
+        const minZ = this.settings.particles.minZ
+        const maxZ = this.settings.particles.maxZ
+        const xRatio = this.settings.particles.planeWidth / image.width
+        const yRatio = this.settings.particles.planeHeight / image.height
 
-        // Canvas to get image data
-        tempCanvas.width = image.width
-        tempCanvas.height = image.height
-        tempCtx.drawImage(image, 0, 0)
-        const imgData = tempCtx.getImageData(0, 0, image.width, image.height)
-
-        // Canvas to get texture
-        tempCanvas.width = 64
-        tempCanvas.height = 64
-        tempCtx.fillStyle = "white"
-        tempCtx.clearRect(0, 0, image.width, image.height)
-        tempCtx.beginPath()
-        tempCtx.arc(32, 32, 32, 0, 2 * Math.PI)
-        tempCtx.fill()
-        const texture = new THREE.Texture(tempCanvas);
-        texture.needsUpdate = true
-
+        // Move particles along z axis
         for(let y = 0; y < image.height; y++) {
             for(let x = 0; x < image.width; x++) {
-                // x,y,z so 3 items for one particule
-                let index = (image.width * y + x) * 3
-                // r,g,b,a so 4 items for one pixel
-                let dataComposantIndex = (image.width * y + x) * 4
-                // only take one pixel every 2
-                if(x%2 == y%2) {
-                    continue
-                }
+                let i = image.width * y + x
+                let posIndex = i * 3       // x, y, z in positions
+                let colorIndex = i * 4  // r, g, b, a in imgData
 
-                // Position depends on camera
-                // Improvement: no need for condition
-                let screenX = 0
-                let screenY = 0
-                if(image.width > image.height) {
-                    screenX = x / image.width * 2 - 1
-                    screenY = -(y / image.width * screenRatio * 2 - screenRatio / 2)
-                } else {
-                    screenX = x / image.height / screenRatio * 2 - (image.width / image.height / screenRatio)
-                    screenY = -(y / image.height * 2 - 1)
-                }
-
-                screenX *= this.settings.imageRatio
-                screenY *= this.settings.imageRatio
-
-                // Set Z from pixel value
-                let r = imgData.data[dataComposantIndex] / 255
-                let g = imgData.data[dataComposantIndex + 1] / 255
-                let b = imgData.data[dataComposantIndex + 2] / 255
-                let a = imgData.data[dataComposantIndex + 3]  / 255
+                // Get input image pixel value (luminosity)
+                let r = imgData.data[colorIndex] / 255
+                let g = imgData.data[colorIndex + 1] / 255
+                let b = imgData.data[colorIndex + 2] / 255
+                let a = imgData.data[colorIndex + 3]  / 255
                 let value = (r + g + b) / 3 * a
 
-                // Project point on plane
-                let z = this.settings.particles.minZ + value * (this.settings.particles.maxZ - this.settings.particles.minZ)
-                let plane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-                    new THREE.Vector3(0, 0, 1),
-                    new THREE.Vector3(0, 0, z)
-                )
-                this.raycaster.setFromCamera(new THREE.Vector2(screenX, screenY), this.camera)
-                this.raycaster.ray.intersectPlane(plane, currentPoint)
+                // Cast ray from particle position on the plane (z=0) to viewpoint
+                let projectedX = x * xRatio - this.settings.particles.planeWidth / 2
+                let projectedY = -y * yRatio + this.settings.particles.planeHeight / 2
+                let projectedPosition = new THREE.Vector3(projectedX, projectedY, 0)
 
-                // Lastly, add to positions array
-                positions[index    ] = currentPoint.x
-                positions[index + 1] = currentPoint.y
-                positions[index + 2] = currentPoint.z
+                // Stolen from raycaster.setFromCamera()
+                let rayDirection = this.settings.viewpoint.clone().sub(projectedPosition).normalize()
+                let ray = new THREE.Ray(projectedPosition, rayDirection)
+                let finalPosition = new THREE.Vector3()
+
+                // Get point position along the ray
+                ray.at(minZ + value * (maxZ - minZ), finalPosition)
+                
+                // Fill the positions array
+                positions[posIndex    ] = finalPosition.x
+                positions[posIndex + 1] = finalPosition.y
+                positions[posIndex + 2] = finalPosition.z
+
+                // Get the discarded attribute, after the position
+                // Because we just want to hide discarded particles in fragment shader
+                // Discard 1px / 2 (for "frame print" effect, like a checkboard)
+                visible[i] = x%2 === y%2
             }
         }
 
-        // Set particules positions
-        this.particlesGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
-
-        // Create particles object
-        const particlesMaterial = new THREE.PointsMaterial({
-            color: this.settings.particles.color,
-            size: this.sizes.width * this.settings.particles.size,
-            map: texture,
-            transparent: true,
-            sizeAttenuation: true,
-        })
-        particlesMaterial.depthWrite = false
-
-        // Add to scene
-        this.scene.add(new THREE.Points(this.particlesGeometry, particlesMaterial))
+        return {
+            positions: new THREE.BufferAttribute(positions, 3),
+            visible: new THREE.BufferAttribute(visible, 1)
+        }
     }
 
     resizeHandler() 
@@ -239,5 +241,18 @@ export default class App
     setupGui()
     {
         this.gui = new dat.GUI()
+    }
+
+    getImageData(image)
+    {
+        const tempCanvas = document.createElement('canvas')
+        const tempCtx = tempCanvas.getContext('2d', {willReadFrequently: true})
+
+        // Canvas to get image data
+        tempCanvas.width = image.width
+        tempCanvas.height = image.height
+        tempCtx.drawImage(image, 0, 0)
+        
+        return tempCtx.getImageData(0, 0, image.width, image.height)
     }
 }
