@@ -10,6 +10,7 @@ attribute vec2 uv;
 attribute float aRandom;
 
 varying float vRandom;
+varying float vElevation;
 varying vec2 vUv;
 
 void main()
@@ -34,4 +35,5 @@ void main()
 
     vRandom = aRandom;
     vUv = uv;
+    vElevation = modelPosition.z;
 }
